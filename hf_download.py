@@ -9,6 +9,7 @@ import os
 import sys
 ## python hf_download.py --dataset  Rowan/hellaswag allenai/c4  --save_dir /public/MountData/dataset/LLM_dataset/hellaswag/
 ## python hf_download.py --model meta-llama/Meta-Llama-3-8B  --save_dir /public/MountData/yaolu/LLM_pretrained/LLAMA3_8B/
+## python hf_download.py --model meta-llama/Meta-Llama-3-8B  --save_dir /public/MountData/yaolu/LLM_pretrained/LLAMA__1B/
 # Check if huggingface_hub is installed, if not, install it
 try:
     import huggingface_hub

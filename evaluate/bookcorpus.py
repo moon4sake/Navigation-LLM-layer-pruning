@@ -81,7 +81,9 @@ class Bookcorpus(datasets.GeneratorBasedBuilder):
 
     def _split_generators(self, dl_manager):
         # arch_path = dl_manager.download(URL)
-        arch_path = '/public/MountData/dataset/bookcorpus/bookcorpus.tar.bz2'
+        # arch_path = '/public/MountData/dataset/bookcorpus/bookcorpus.tar.bz2'
+        arch_path = 'datasets/bookcorpus/bookcorpus.tar.bz2'
+
         return [
             datasets.SplitGenerator(
                 name=datasets.Split.TRAIN, gen_kwargs={"files": dl_manager.iter_archive(arch_path)}

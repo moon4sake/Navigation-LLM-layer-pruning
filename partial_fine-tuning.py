@@ -69,10 +69,10 @@ def main(args):
         device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)}
         gradient_accumulation_steps = gradient_accumulation_steps // world_size
 
-    tokenizer = AutoTokenizer.from_pretrained(args.prune_model_path,
+    tokenizer = AutoTokenizer.from_pretrained(f"{args.model_path}/pretrained",
         use_fast=False, trust_remote_code=True
     )
-    model = AutoModelForCausalLM.from_pretrained(args.prune_model_path,
+    model = AutoModelForCausalLM.from_pretrained(f"{args.model_path}/pretrained",
         trust_remote_code=True, device_map=device_map
     )
 
@@ -258,9 +258,10 @@ def main(args):
     trainer.train()
 
     if args.save_model:
-        output_lora_dir = '/public/MountData/yaolu/LLM_pretrained/pruned_model/partial_tuing_taylor8/partial_tuing_{}_alpaca_{}/'.format(args.base_model, args.partial_layer_name)
+        # output_lora_dir = '/public/MountData/yaolu/LLM_pretrained/pruned_model/partial_tuing_taylor8/partial_tuing_{}_alpaca_{}/'.format(args.base_model, args.partial_layer_name)
+        output_lora_dir = '{}/pruned/partial_tuing_taylor8/{}_partial_tuing_{}_{}'.format(args.model_path, args.base_model, args.data, args.partial_layer_name)
         if not os.path.exists(output_lora_dir):
-            os.mkdir(output_lora_dir)
+            os.makedirs(output_lora_dir)
         model.save_pretrained(output_lora_dir)
         tokenizer.save_pretrained(output_lora_dir)
 
@@ -272,7 +273,9 @@ if __name__ == "__main__":
 
     # Model Type&Path
     parser.add_argument('--base_model', type=str, default="llama3-8b", help='base model name')
+    parser.add_argument('--data', type=str, default="alpaca-cleaned", help='data name')
     parser.add_argument('--prune_model_path', type=str, help='prune model name')
+    parser.add_argument('--model_path', type=str, help='model name')
     parser.add_argument('--data_path', type=str, default="/public/MountData/dataset/alpaca-cleaned/", help='data path')
     parser.add_argument('--cache_dataset', action="store_true", default=False)
     parser.add_argument('--extra_val_dataset', type=str, default=None, help='validation datasets. Split with ","')

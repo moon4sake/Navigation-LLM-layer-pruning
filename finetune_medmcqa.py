@@ -10,9 +10,8 @@ import numpy as np
 import torch
 import transformers
 from datasets import load_dataset
-from peft import LoraConfig, get_peft_model
-from transformers import AutoTokenizer, AutoModelForCausalLM
-from utils.prompter import Prompter, ZeroPrompter
+from peft import LoraConfig, get_peft_model, AutoPeftModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, DataCollatorWithPadding
 from utils.utils import prepare_model_for_int8_training
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
@@ -33,11 +32,6 @@ def main(args):
     set_random_seed(args.seed)
     gradient_accumulation_steps = args.batch_size // args.micro_batch_size
 
-    if not args.no_instruction:
-        prompter = Prompter(args.prompt_template_name)
-    else:
-        prompter = ZeroPrompter()
-
     device_map = "auto"
     world_size = int(os.environ.get("WORLD_SIZE", 1))
     ddp = world_size != 1
@@ -50,83 +44,46 @@ def main(args):
         use_fast=False, trust_remote_code=True
     )
     model = AutoModelForCausalLM.from_pretrained(f"{args.model_path}/pretrained",
-        trust_remote_code=True, device_map=device_map
-    )
+        trust_remote_code=True, device_map=device_map, num_labels=4
+    )  # 4 chioce
 
     print(model)
 
     tokenizer.pad_token_id = (0)
     tokenizer.padding_side = "left"
 
-    def tokenize(prompt, add_eos_token=True):
-        result = tokenizer(
-            prompt,
-            truncation=True,
-            max_length=args.cutoff_len,
-            padding=False,
-            return_tensors=None,
-        )
-        if (
-                result["input_ids"][-1] != tokenizer.eos_token_id
-                and len(result["input_ids"]) < args.cutoff_len
-                and add_eos_token
-        ):
-            result["input_ids"].append(tokenizer.eos_token_id)
-            result["attention_mask"].append(1)
+    def preprocess_function(examples):
+        inputs = []
+        labels = []
 
-        result["labels"] = result["input_ids"].copy()
+        # Loop over each example in the dataset
+        for question, a, b, c, d, answer in zip(examples['question'], examples['opa'], examples['opb'], examples['opc'], examples['opd'], examples['cop']):
+            # Concatenate the question and the choices into a single input
+            choices = [a, b, c, d]
+            input_text = question + " " + " ".join([f"({chr(65 + i)}) {choice}" for i, choice in enumerate(choices)])
+            inputs.append(input_text)
 
-        return result
+            # Check if the answer is already an integer (e.g., 0, 1, 2, 3 for choices A, B, C, D)
+            if isinstance(answer, int):
+                answer_index = answer
+            # If the answer is a string (like 'A', 'B', 'C', 'D'), convert it to an index
+            elif isinstance(answer, str) and len(answer) == 1:
+                answer_index = ord(answer) - ord('A')
+            else:
+                raise ValueError(f"Unexpected format for answer: {answer}")
 
-    def generate_and_tokenize_prompt(data_point):
-        if 'lamini' in args.data_path.lower():
-            full_prompt = prompter.generate_prompt(
-                data_point["instruction"],
-                None,
-                data_point["response"],
-            )
-        elif 'alpaca' in args.data_path.lower():
-            # print('using alpaca...')
-            full_prompt = prompter.generate_prompt(
-                data_point["instruction"],
-                data_point["input"],
-                data_point["output"],
-            )
-        else:
-            raise NotImplementedError
+            labels.append(answer_index)
 
-        tokenized_full_prompt = tokenize(full_prompt)
-        if not args.train_on_inputs:
-            user_prompt = prompter.generate_prompt(
-                data_point["instruction"], data_point["input"] if 'input' in data_point.keys() else None,
-            )
-            tokenized_user_prompt = tokenize(
-                user_prompt, add_eos_token=args.add_eos_token
-            )
-            user_prompt_len = len(tokenized_user_prompt["input_ids"])
+        # Tokenize inputs
+        model_inputs = tokenizer(inputs, max_length=512, padding="max_length", truncation=True)
 
-            if args.add_eos_token:
-                user_prompt_len -= 1
+        # Use the labels as the index of the correct choice
+        model_inputs["labels"] = labels
+        return model_inputs
 
-            tokenized_full_prompt["labels"] = [
-                                                  -100
-                                              ] * user_prompt_len + tokenized_full_prompt["labels"][
-                                                                    user_prompt_len:
-                                                                    ]  # could be sped up, probably
-        return tokenized_full_prompt
-
-    def split_and_tokenizer(test_data, tokenizer, seq_len, field_name):
-        test_ids = tokenizer("\n\n".join(test_data[field_name]), return_tensors='pt').input_ids[0]
-        nsamples = test_ids.numel() // seq_len
-
-        test_set = []
-        for i in range(nsamples):
-            batch = test_ids[(i * seq_len):((i + 1) * seq_len)]
-            test_set.append({
-                'input_ids': batch,
-                'labels': batch
-            })
-        return test_set
+    # Apply the preprocess function to the dataset
+    dataset = load_dataset("datasets/openlifescienceai--medmcqa")
+    tokenized_dataset = dataset.map(preprocess_function, batched=True)
 
     # Prepare For LoRA
     model = prepare_model_for_int8_training(model)
@@ -143,74 +100,71 @@ def main(args):
     model = get_peft_model(model, config)
     model.print_trainable_parameters()
 
-    # Load Train Dataset
-    data = load_dataset(args.data_path)
-    if args.val_set_size > 0:
-        train_val = data["train"].train_test_split(
-            test_size=args.val_set_size, shuffle=True, seed=42
-        )
-        train_data = (
-            train_val["train"].shuffle().map(generate_and_tokenize_prompt)
-        )
-        val_data = {
-            args.data_path: train_val["test"].shuffle().map(generate_and_tokenize_prompt),
-        }
-    else:
-        train_data = data["train"].shuffle().map(generate_and_tokenize_prompt)
-        val_data = None
-
-    # Load Extra Validation Dataset
-    if args.extra_val_dataset:
-        from evaluate.ppl_dataset import get_wikitext2, get_ptb
-
-        seq_len = 128  # too small, ori 128
-        for extra_dataset in args.extra_val_dataset.split(','):
-            if 'wikitext2' in extra_dataset:
-                _, test_data = get_wikitext2(seq_len, None)
-                test_data = split_and_tokenizer(test_data, tokenizer, seq_len, field_name='text')
-            if 'ptb' in extra_dataset:
-                _, test_data = get_ptb(seq_len, None)
-                test_data = split_and_tokenizer(test_data, tokenizer, seq_len, field_name='sentence')
-            val_data[extra_dataset] = test_data
-
     if not ddp and torch.cuda.device_count() > 1:
         # keeps Trainer from trying its own DataParallelism when more than 1 gpu is available
         model.is_parallelizable = True
         model.model_parallel = True
 
-    trainer = transformers.Trainer(
+    from transformers import Trainer, DataCollatorWithPadding
+
+    class MultipleChoiceTrainer(Trainer):
+        def compute_loss(self, model, inputs, return_outputs=False):
+            labels = inputs.pop("labels")
+
+            # Forward pass
+            outputs = model(**inputs)
+            logits = outputs.get("logits")
+
+            # Inspect logits shape
+            # print("Logits shape before reshaping:", logits.shape)
+
+            # Get batch size and number of choices from inputs
+            batch_size = inputs["input_ids"].size(0)  # This is 4 in your case
+            num_choices = inputs["input_ids"].size(1)  # Number of choices (this could be 4 or more)
+
+            # Reshape logits (might need to handle additional dimensions)
+            logits = logits.view(batch_size, num_choices, -1)
+
+            # Optionally, reduce to `[batch_size, num_choices]`
+            logits = logits.mean(dim=-1)  # Averaging over hidden dimensions (this is one strategy)
+
+            # Compute cross-entropy loss
+            loss_fct = torch.nn.CrossEntropyLoss()
+            loss = loss_fct(logits, labels)
+
+            return (loss, outputs) if return_outputs else loss
+
+    # Use the customized trainer in place of the original Trainer
+    trainer = MultipleChoiceTrainer(
         model=model,
-        train_dataset=train_data,
-        eval_dataset=val_data,
+        train_dataset=tokenized_dataset["train"],
+        eval_dataset=tokenized_dataset["validation"],
         args=transformers.TrainingArguments(
             per_device_train_batch_size=args.micro_batch_size,
             gradient_accumulation_steps=gradient_accumulation_steps,
-            warmup_steps=100,  # 100 ori
+            warmup_steps=100,
             num_train_epochs=args.num_epochs,
             learning_rate=args.learning_rate,
-            fp16=True,  # not torch.cuda.is_bf16_supported()
-            bf16=False,  # torch.cuda.is_bf16_supported()
+            fp16=True,
+            bf16=False,
             logging_steps=10,
             logging_first_step=True,
             optim="adamw_torch",
             evaluation_strategy="steps",
             save_strategy="steps",
-            eval_steps=100,
-            save_steps=200,
+            eval_steps=10,
+            save_steps=50,
             output_dir=args.output_dir,
             save_total_limit=20,
             max_grad_norm=1.0,
             load_best_model_at_end=True,
-            # lr_scheduler_type="linear",
             ddp_find_unused_parameters=False if ddp else None,
             group_by_length=args.group_by_length,
             report_to="none",
             run_name=args.output_dir.split('/')[-1],
-            metric_for_best_model="{}_loss".format(args.data_path),
+            metric_for_best_model="eval_loss",
         ),
-        data_collator=transformers.DataCollatorForSeq2Seq(
-            tokenizer, pad_to_multiple_of=8, return_tensors="pt", padding=True
-        ),
+        data_collator=DataCollatorWithPadding(tokenizer=tokenizer),
     )
     model.config.use_cache = False
 
@@ -218,7 +172,9 @@ def main(args):
     # model = model.merge_and_unload()
 
     if args.save_model:
-        output_lora_dir = '{}/pruned/oneshot/{}_finetuned_lora_{}_{}{}/'.format(args.model_path, args.base_model, args.data, args.pr_method, args.remove_layer)
+        # output_lora_dir = '/public/MountData/yaolu/LLM_pretrained/pruned_model/oneshot/taylor/finetuned_lora_alpaca_{}_{}{}/'.format(args.base_model, args.pr_method, args.remove_layer)
+        output_lora_dir = '{}/finetuned/{}_finetuned_lora/'.format(args.model_path, args.base_model, args.data)
+
         if not os.path.exists(output_lora_dir):
             os.mkdir(output_lora_dir)
         model.save_pretrained(output_lora_dir)
@@ -232,7 +188,6 @@ if __name__ == "__main__":
     parser.add_argument('--data', type=str, default="alpaca-cleaned", help='data name')
     parser.add_argument('--prune_model_path', type=str, help='prune model name')
     parser.add_argument('--model_path', type=str, help='model name')
-    parser.add_argument('--data_path', type=str, default="/public/MountData/dataset/alpaca-cleaned/", help='data path')
     parser.add_argument('--cache_dataset', action="store_true", default=False)
     parser.add_argument('--extra_val_dataset', type=str, default=None, help='validation datasets. Split with ","')
     parser.add_argument('--remove_layer', type=int, default=16, help='batch size')
@@ -253,8 +208,8 @@ if __name__ == "__main__":
                         help="Whether to use the instruction template or not.")
 
     # Lora Configuration
-    parser.add_argument('--lora_r', type=int, default=8, help='lora r')
-    parser.add_argument('--lora_alpha', type=int, default=16, help='lora alpha')
+    parser.add_argument('--lora_r', type=int, default=16, help='lora r')
+    parser.add_argument('--lora_alpha', type=int, default=32, help='lora alpha')
     parser.add_argument('--lora_dropout', type=float, default=0.05, help='lora dropout')
     parser.add_argument('--lora_target_modules', type=str,
                         default="q_proj,k_proj,v_proj,o_proj,gate_proj,down_proj,up_proj", help='lora target modules')

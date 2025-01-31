@@ -57,16 +57,19 @@ def main(args):
             trust_remote_code=True, use_cache=False, device_map=device_map
         )
         config_path = '/public/MountData/yaolu/LLM_pretrained/LLAMA3_8B/'
-    elif args.base_model == 'Vicuna_7B':
+    elif args.base_model == 'vicuna-7b':
         tokenizer = AutoTokenizer.from_pretrained(
-            '/public/MountData/yaolu/LLM_pretrained/Vicuna_7B_V1.5/models--lmsys--vicuna-7b-v1.5/',
+            # '/public/MountData/yaolu/LLM_pretrained/Vicuna_7B_V1.5/models--lmsys--vicuna-7b-v1.5/',
+            f'{args.model_path}/pretrained/',
             use_fast=False, trust_remote_code=True
         )
         model = AutoModelForCausalLM.from_pretrained(
-            '/public/MountData/yaolu/LLM_pretrained/Vicuna_7B_V1.5/models--lmsys--vicuna-7b-v1.5/',
+            # '/public/MountData/yaolu/LLM_pretrained/Vicuna_7B_V1.5/models--lmsys--vicuna-7b-v1.5/',
+            f'{args.model_path}/pretrained/',
             trust_remote_code=True, device_map=device_map, use_cache=False
         )
-        config_path = '/public/MountData/yaolu/LLM_pretrained/Vicuna_7B_V1.5/models--lmsys--vicuna-7b-v1.5/'
+        # config_path = '/public/MountData/yaolu/LLM_pretrained/Vicuna_7B_V1.5/models--lmsys--vicuna-7b-v1.5/'
+        config_path = f'{args.model_path}/pretrained/'
     elif args.base_model == 'Qwen1.5-7B':
         tokenizer = AutoTokenizer.from_pretrained(
             '/public/MountData/yaolu/LLM_pretrained/Qwen1.5-7B/models--Qwen--Qwen1.5-7B/',
@@ -109,9 +112,18 @@ def main(args):
             use_cache=False,
             cache_dir='/public/MountData/yaolu/LLM_pretrained/Meta-Llama-3.1-8B-Instruct/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/8c22764a7e3675c50d4c7c9a4edb474456022b16/'
         )
-        config_path = '/public/MountData/yaolu/LLM_pretrained/Meta-Llama-3.1-8B-Instruct/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/8c22764a7e3675c50d4c7c9a4edb474456022b16/'
+        config_path = '/public/MountData/yaolu/LLM_pretrained/Meta-Llama-3.1-8B-Instruct/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/8c22764a7e3675c50d4c7c9a4edb474456022b16/'  
     else:
-        sys.exit(0)
+        tokenizer = AutoTokenizer.from_pretrained(
+            f'{args.model_path}/pretrained/',
+            use_fast=False, trust_remote_code=True
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            f'{args.model_path}/pretrained/',
+            trust_remote_code=True, device_map=device_map, use_cache=False
+        )
+        config_path = f'{args.model_path}/pretrained/'
+        # sys.exit(0)
 
     print(model)
 
@@ -187,6 +199,9 @@ def main(args):
     if args.base_model == 'Gemma2-2b':
         layer_num = [i for i in range(26)]
         remain_num = 20
+    elif args.base_model == 'llama-3.2-1b':
+        layer_num = [i for i in range(16)]
+        remain_num = 12
     else:
         layer_num = [i for i in range(32)]
         remain_num = 24
@@ -219,7 +234,6 @@ def main(args):
     print('remained: {}'.format(remained))
     new_config = AutoConfig.from_pretrained(config_path, num_hidden_layers=len(remained), trust_remote_code=True)
     new_model = AutoModelForCausalLM.from_config(new_config)
-    # 复制参数
     new_model.model.embed_tokens.load_state_dict(model.model.embed_tokens.state_dict())
     new_model.model.norm.load_state_dict(model.model.norm.state_dict())
     new_model.lm_head.load_state_dict(model.lm_head.state_dict())
@@ -231,9 +245,9 @@ def main(args):
     print(new_model)
 
     if args.save_model:
-        output_lora_dir = '/public/MountData/yaolu/LLM_pretrained/pruned_model/oneshot/pruned_{}_{}_{}/'.format(args.base_model, args.pr_method, args.remove_layer)
+        output_lora_dir = '{}/pruned/oneshot/pruned_{}_{}_{}/'.format(args.model_path, args.base_model, args.pr_method, args.remove_layer)
         if not os.path.exists(output_lora_dir):
-            os.mkdir(output_lora_dir)
+            os.makedirs(output_lora_dir)
         new_model.save_pretrained(output_lora_dir)
         tokenizer.save_pretrained(output_lora_dir)
 
@@ -243,8 +257,11 @@ if __name__ == "__main__":
 
     # Model Type&Path
     parser.add_argument('--base_model', type=str, default="llama3-8b", help='base model name')
-    parser.add_argument('--output_dir', type=str,
-                        default="/public/MountData/yaolu/LLM_pretrained/pruned_model/lora-alpaca-llama/",
+    # parser.add_argument('--output_dir', type=str,
+    #                     default="/public/MountData/yaolu/LLM_pretrained/pruned_model/lora-alpaca-llama/",
+    #                     help='output directory')
+    parser.add_argument('--model_path', type=str,
+                        default="models/vicuna-7b-v1.5",
                         help='output directory')
     parser.add_argument('--pr_method', type=str, default="ppl", help='device')
     parser.add_argument('--remove_layer', type=int, default=16, help='batch size')

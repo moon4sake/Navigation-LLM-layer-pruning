@@ -18,7 +18,8 @@ import numpy as np
 import torch
 from tqdm import tqdm
 from transformers import AutoTokenizer, AutoModelForCausalLM, AutoConfig, LlamaForCausalLM
-from ppldataset import get_wikitext2, get_ptb, process_data
+from peft import LoraConfig, get_peft_model, AutoPeftModelForCausalLM, PeftModel
+from ppl_dataset import get_wikitext2, get_ptb, process_data
 from utils.eval import eval_zero_shot
 
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
@@ -177,7 +178,32 @@ def main(args):
         )
         config_path = '/public/MountData/yaolu/LLM_pretrained/Meta-Llama-3.1-8B-Instruct/models--meta-llama--Meta-Llama-3.1-8B-Instruct/snapshots/8c22764a7e3675c50d4c7c9a4edb474456022b16/'
     else:
-        sys.exit(0)
+        tokenizer = AutoTokenizer.from_pretrained(
+            args.tokenizer_path,
+            use_fast=False, trust_remote_code=True
+        )
+        model = AutoModelForCausalLM.from_pretrained(
+            args.model_path,
+            trust_remote_code=True, device_map=device_map, use_cache=False
+        )
+        if args.merge_model:
+            model = AutoModelForCausalLM.from_pretrained(
+                args.tokenizer_path,
+                trust_remote_code=True, device_map=device_map, use_cache=False
+            )
+            model = PeftModel.from_pretrained(
+                model,
+                args.model_path,
+                is_trainable=True,
+            )
+            # model = AutoPeftModelForCausalLM.from_pretrained(
+            #     args.model_path,
+            #     trust_remote_code=True, device_map=device_map, use_cache=False, is_trainable=True,
+            # )
+            model=model.merge_and_unload()
+            model.enable_input_require_grads()
+        config_path = args.model_path
+        # sys.exit(0)
 
     print(model)
 
@@ -189,7 +215,7 @@ def main(args):
     print(f"Total number of parameters before pruning: {total_params}")
 
     if not os.path.exists(args.output_dir + '{}/{}/'.format(args.pruning_method, args.base_model)):
-        os.mkdir(args.output_dir + '{}/{}/'.format(args.pruning_method, args.base_model))
+        os.makedirs(args.output_dir + '{}/{}/'.format(args.pruning_method, args.base_model))
 
     if args.pruning_method == 'magnitude_l1':  # ref to Pruning filters for efficient convnets
         if args.norm_power != 1:
@@ -418,15 +444,19 @@ def main(args):
     elif args.pruning_method == 'taylor':  # ref to Shortened LLaMA: Depth Pruning for Large Language Models with Comparison of Retraining Methods
         # model.half()
         model = model.cuda()
-        result_csv_weight = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), "weight_score.csv")
-        result_csv_block = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), "block_score_all.csv")
-        result_csv_block_detail = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), "block_score_detail.csv")
-        result_csv_block_sort = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), "block_score_sorted.csv")
-        block_order_path = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), "block_order.csv")
+        result_csv_weight = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{args.cal_data}_weight_score.csv")
+        result_csv_block = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{args.cal_data}_block_score_all.csv")
+        result_csv_block_detail = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{args.cal_data}_block_score_detail.csv")
+        result_csv_block_sort = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{args.cal_data}_block_score_sorted.csv")
+        block_order_path = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{args.cal_data}_block_order.csv")
 
         print("Do forward to collect gradient information")
         salience_dict = {}
-        example_prompts = get_examples('bookcorpus', tokenizer, 10, seq_len=128).to(args.device)
+        example_prompts = get_examples(args.cal_data, tokenizer, 10, seq_len=128).to(args.device)
+
+        # Force model to have gradient
+        for k, param in model.named_parameters():
+            param.requires_grad = True
 
         for i in range(0, example_prompts.size(0), args.batch_size):
             example_prompts_tmp = example_prompts[i: i + args.batch_size]
@@ -523,7 +553,11 @@ def main(args):
         with open(block_order_path, "w") as logfile_order:
             logwriter_order = csv.writer(logfile_order, delimiter=",")
             logwriter_order.writerow(block_order)
-
+        
+        with open(f'{args.output_dir}/taylor/score_{args.cal_data}.txt', 'a') as f:
+            f.write(f"=== block order removed: {block_order_path}\n")
+            f.write(' '.join(str(x) for x in block_order))
+            f.write(f"\nlen: {len(block_order)}\n")
         print(f"=== block order removed: {block_order_path}")
         print(block_order)
         print(f"len: {len(block_order)}")
@@ -574,7 +608,7 @@ def main(args):
 
             return layer_importance
 
-        example_prompts = get_examples('bookcorpus', tokenizer, 10, seq_len=128).to(args.device)  # better to use 10, 5
+        example_prompts = get_examples(args.cal_data, tokenizer, 10, seq_len=128).to(args.device)  # better to use 10, 5
 
         # Calculate layer importance
         importance_scores = calculate_layer_importance(model.to(args.device), example_prompts)
@@ -582,10 +616,13 @@ def main(args):
         # Print the importance scores
         for idx, score in enumerate(importance_scores):
             score_ldx.append(score)
+            with open(f'{args.output_dir}/BI/score_{args.cal_data}.txt', 'a') as f:
+                f.write(f"Layer {idx + 1} Importance: {score:.4f}\n")
             print(f"Layer {idx + 1} Importance: {score:.4f}")
-
+        with open(f'{args.output_dir}/BI/score_{args.cal_data}.txt', 'a') as f:
+            f.write(f"{score_ldx}\n")
         print(score_ldx)
-        torch.save(score_ldx, '/public/ly/SBF/pruning_method/BI/bookcorpus_{}.pth'.format(args.base_model))
+        # torch.save(score_ldx, '{}/BI/bookcorpus_{}.pth'.format(args.output_dir, args.base_model))
 
 
 if __name__ == "__main__":
@@ -593,6 +630,10 @@ if __name__ == "__main__":
 
     # Model Type&Path
     parser.add_argument('--base_model', type=str, default="llama3-8b", help='base model name')
+    parser.add_argument('--merge_model', action='store_true', help='merge lora module')
+    parser.add_argument('--cal_data', type=str, default="bookcorpus", help='calibration dataset')
+    parser.add_argument('--model_path', type=str, help='model name')
+    parser.add_argument('--tokenizer_path', type=str, help='tokenizer name')
     parser.add_argument('--output_dir', type=str,
                         default="/public/ly/SBF/pruning_method/",
                         help='output directory')

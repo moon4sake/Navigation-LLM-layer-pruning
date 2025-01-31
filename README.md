@@ -18,31 +18,48 @@ Although large language models (LLMs) have achieved remarkable success across va
 **1. Download Hellaswag from Huggingface:**
 ```python
 python hf_download.py --dataset  Rowan/hellaswag  --save_dir saved_path
+python hf_download.py --dataset  openlifescienceai/medmcqa  --save_dir datasets
+
 ```
 
 **2. Download Vicuna-7b-v1.5 from Huggingface:**
 ```python
 python hf_download.py --model  lmsys/vicuna-7b-v1.5  --save_dir saved_path
+# python hf_download.py --model  meta-llama/Llama-3.1-8B-Instruct --save_dir saved_path
+# python hf_download.py --model  meta-llama/Llama-3.2-1B-Instruct --save_dir models
+
 ```
 
 **3. Llama-3.1-8B-Instruct Pruning with 8 layers pruned using reverse-order:**
 
 ```python
-CUDA_VISIBLE_DEVICES=0,1 TRANSFORMERS_OFFLINE=1 python prune_llm.py --base_model Llama-3.1-8B-Instruct --save_model  --pr_method tail --remove_layer 8
+CUDA_VISIBLE_DEVICES=0,1 TRANSFORMERS_OFFLINE=1 python prune_llm.py --base_model Vicuna_7B --save_model  --pr_method tail --remove_layer 8
+CUDA_VISIBLE_DEVICES=0,1 python prune_llm.py --base_model llama-3.2-1b --model_path models/llama-3.2-1b --save_model  --pr_method tail --remove_layer 8
 ```
 
 **4. Llama-3.1-8B-Instruct Finetuning with LoRA:**
 ```python
 CUDA_VISIBLE_DEVICES=0,1 TRANSFORMERS_OFFLINE=1 python finetune_pruned.py --base_model Llama-3.1-8B-Instruct --save_model --pr_method  tail  --remove_layer 8 --prune_model_path your_path
+
+CUDA_VISIBLE_DEVICES=0,1 python finetune_pruned.py --base_model vicuna-7b-v1.5 --save_model --pr_method  tail  --remove_layer 8 --model_path models/vicuna-7b-v1.5 --data_path datasets/yahma--alpaca-cleaned/
+```
+
+**Pruning methods**
+```
+CUDA_VISIBLE_DEVICES=0,1 python pruning_method.py --base_model llama-3.2-1b --save_model --model_path models/llama-3.2-1b --pruning_method BI --output_dir models/llama-3.2-1b/pruned/BI
 ```
 
 **5. Llama-3.1-8B-Instruct Finetuning with Partial-Layer Finetuning:**
 ```python
 CUDA_VISIBLE_DEVICES=0,1 TRANSFORMERS_OFFLINE=1 python partial_fine-tuning.py --base_model Llama-3.1-8B-Instruct --save_model  --prune_model_path your_path  --partial_layer_name last3
+CUDA_VISIBLE_DEVICES=0,1 python partial_fine-tuning.py --base_model vicuna-7b-v1.5 --save_model  --model_path models/vicuna-7b-v1.5 --data_path datasets/yahma--alpaca-cleaned/ --partial_layer_name last3 
+# You should set `do_sample=True` or unset `top_p`.'
 ```
 **6. Evaluating the Performance of the Pruned Llama-3.1-8B-Instruct (with LoRA) using [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness):**
 ```python
 #CUDA_VISIBLE_DEVICES=0,1 TRANSFORMERS_OFFLINE=1 lm_eval --model hf  --model_args pretrained=model_path,trust_remote_code=True,peft=lora_path,parallelize=True --tasks mmlu,cmmlu,piqa,openbookqa,winogrande,hellaswag,arc_easy,arc_challenge  --device cuda:0  --batch_size auto  --num_fewshot 0
+
+CUDA_VISIBLE_DEVICES=0,1 TRANSFORMERS_OFFLINE=1 lm_eval --model hf  --model_args pretrained=model_path,trust_remote_code=True,peft=lora_path,parallelize=True --tasks mmlu,cmmlu,piqa,openbookqa,winogrande,hellaswag,arc_easy,arc_challenge  --device cuda:0  --batch_size auto  --num_fewshot 0
 ```
 
 **7. Evaluating the Performance of the Pruned Llama-3.1-8B-Instruct (with Partial-Layer Finetuning) using [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness):**
