@@ -125,7 +125,7 @@ def get_medmcqa_cot(tokenizer, n_samples, seq_len):
 
 
 def get_custom_data(dataset, tokenizer, n_samples, seq_len, is_COT=False):
-
+    if dataset == 'mmlu': dataset = "mmul"
     train_data = load_dataset("datasets/pruning_calibration", split=dataset)
 
     tokenized_samples, history = [], []

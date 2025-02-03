@@ -216,7 +216,8 @@ def main(args):
             block = [26, 25, 24, 28, 27, 23, 29, 22, 20, 21, 19, 18, 30, 17, 13, 16, 14, 15, 12, 10, 11, 9, 8, 7, 31, 6, 5, 0, 4, 2, 3, 1]  # llama3.1 taylor
         if args.base_model == 'Vicuna_7B':
             block = [0, 1, 29, 28, 30, 26, 27, 25, 24, 23, 21, 22, 31, 19, 12, 20, 18, 13, 14, 11, 17, 8, 10, 9, 16, 7, 15, 2, 6, 5, 3, 4]
-
+        else: 
+            block = [int(x) for x in args.blocks.split(' ')]
         block_list = block[:num]
         block_list = sorted(block_list)
         removed = block_list
@@ -264,6 +265,7 @@ if __name__ == "__main__":
                         default="models/vicuna-7b-v1.5",
                         help='output directory')
     parser.add_argument('--pr_method', type=str, default="ppl", help='device')
+    parser.add_argument('--blocks', type=str, default="0", help='device')
     parser.add_argument('--remove_layer', type=int, default=16, help='batch size')
 
     # general argument

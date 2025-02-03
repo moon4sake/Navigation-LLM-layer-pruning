@@ -69,10 +69,10 @@ def main(args):
         device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)}
         gradient_accumulation_steps = gradient_accumulation_steps // world_size
 
-    tokenizer = AutoTokenizer.from_pretrained(f"{args.model_path}/pretrained",
+    tokenizer = AutoTokenizer.from_pretrained(f"{args.model_path}",
         use_fast=False, trust_remote_code=True
     )
-    model = AutoModelForCausalLM.from_pretrained(f"{args.model_path}/pretrained",
+    model = AutoModelForCausalLM.from_pretrained(f"{args.model_path}",
         trust_remote_code=True, device_map=device_map
     )
 
