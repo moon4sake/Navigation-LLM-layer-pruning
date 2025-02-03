@@ -443,16 +443,19 @@ def main(args):
 
     elif args.pruning_method == 'taylor':  # ref to Shortened LLaMA: Depth Pruning for Large Language Models with Comparison of Retraining Methods
         # model.half()
+
+        save_name = f"{args.cal_data}_COT" if args.data_cot else args.cal_data
+
         model = model.cuda()
-        result_csv_weight = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{args.cal_data}_weight_score.csv")
-        result_csv_block = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{args.cal_data}_block_score_all.csv")
-        result_csv_block_detail = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{args.cal_data}_block_score_detail.csv")
-        result_csv_block_sort = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{args.cal_data}_block_score_sorted.csv")
-        block_order_path = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{args.cal_data}_block_order.csv")
+        result_csv_weight = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{save_name}_weight_score.csv")
+        result_csv_block = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{save_name}_block_score_all.csv")
+        result_csv_block_detail = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{save_name}_block_score_detail.csv")
+        result_csv_block_sort = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{save_name}_block_score_sorted.csv")
+        block_order_path = os.path.join(args.output_dir+'{}/{}/'.format(args.pruning_method, args.base_model), f"{save_name}_block_order.csv")
 
         print("Do forward to collect gradient information")
         salience_dict = {}
-        example_prompts = get_examples(args.cal_data, tokenizer, 10, seq_len=128).to(args.device)
+        example_prompts = get_examples(args.cal_data, tokenizer, 10, seq_len=128, is_COT=args.data_cot).to(args.device)
 
         # Force model to have gradient
         for k, param in model.named_parameters():
@@ -632,6 +635,7 @@ if __name__ == "__main__":
     parser.add_argument('--base_model', type=str, default="llama3-8b", help='base model name')
     parser.add_argument('--merge_model', action='store_true', help='merge lora module')
     parser.add_argument('--cal_data', type=str, default="bookcorpus", help='calibration dataset')
+    parser.add_argument('--data_cot', action='store_true', help='whether to use COT-enhanced dataset')
     parser.add_argument('--model_path', type=str, help='model name')
     parser.add_argument('--tokenizer_path', type=str, help='tokenizer name')
     parser.add_argument('--output_dir', type=str,

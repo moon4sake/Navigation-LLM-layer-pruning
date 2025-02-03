@@ -123,7 +123,28 @@ def get_medmcqa_cot(tokenizer, n_samples, seq_len):
         tokenized_samples.append(tokenized_sample.input_ids[:, i:i + seq_len])
     return torch.cat(tokenized_samples, dim=0)
 
-def get_examples(dataset, tokenizer, n_samples, seq_len=128):
+
+def get_custom_data(dataset, tokenizer, n_samples, seq_len, is_COT=False):
+
+    train_data = load_dataset("datasets/pruning_calibration", split=dataset)
+
+    tokenized_samples, history = [], []
+    for _ in range(n_samples):
+        while True:
+            i = random.randint(0, len(train_data) - 1)
+            if is_COT:
+                tokenized_sample = tokenizer(train_data[i]['COT_full'], return_tensors='pt')
+            else:
+                tokenized_sample = tokenizer(train_data[i]['noCOT_full'], return_tensors='pt')
+            if tokenized_sample.input_ids.shape[1] >= seq_len and i not in history:
+                history.append(i)
+                break
+        i = random.randint(0, tokenized_sample.input_ids.shape[1] - seq_len)
+        tokenized_samples.append(tokenized_sample.input_ids[:, i:i + seq_len])
+    return torch.cat(tokenized_samples, dim=0)
+
+
+def get_examples(dataset, tokenizer, n_samples, seq_len=128, is_COT=False):
     if dataset == 'c4':
         return get_c4(tokenizer, n_samples, seq_len)
     elif dataset == 'bookcorpus':
@@ -136,6 +157,12 @@ def get_examples(dataset, tokenizer, n_samples, seq_len=128):
         return get_medmcqa(tokenizer, n_samples, seq_len, True)
     elif dataset == 'medmcqa_cot':
         return get_medmcqa_cot(tokenizer, n_samples, seq_len)
+    elif dataset == 'gsm8k':
+        return get_custom_data(dataset, tokenizer, n_samples, seq_len, is_COT)
+    elif dataset == 'mmlu':
+        return get_custom_data(dataset, tokenizer, n_samples, seq_len, is_COT)
+    elif dataset == 'truthfulqa':
+        return get_custom_data(dataset, tokenizer, n_samples, seq_len, is_COT)
     # elif dataset == 'bookcorpus':
     #     return get_bookcorpus(tokenizer, n_samples, seq_len)
     else:

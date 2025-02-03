@@ -17,7 +17,7 @@ Although large language models (LLMs) have achieved remarkable success across va
 ## Step-by-step Instructions
 **1. Download Hellaswag from Huggingface:**
 ```python
-python hf_download.py --dataset  Rowan/hellaswag  --save_dir saved_path
+python hf_download.py --dataset  DopeorNope/pruning_calibration  --save_dir saved_path
 python hf_download.py --dataset  openlifescienceai/medmcqa  --save_dir datasets
 
 ```

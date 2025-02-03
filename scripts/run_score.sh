@@ -35,15 +35,29 @@ set -x
 #      --cal_data medqa \
 #      --output_dir models/vicuna-7b-v1.5/pruned/
 
-CUDA_VISIBLE_DEVICES=0 python pruning_method.py \
-     --base_model llama-3.2-1b \
-     --save_model \
-     --model_path models/llama-3.2-1b/pretrained \
-     --tokenizer_path models/llama-3.2-1b/pretrained/ \
-     --pruning_method taylor \
-     --cal_data medmcqa_cot \
-     --output_dir models/llama-3.2-1b/pretrained/pruned/ #models/llama-3.2-1b/finetuned/medmcqa/checkpoint-600/pruned/
+CAL_DATA="mmlu gsm8k truthfulqa"
 
+for CD in $CAL_DATA
+do
+     CUDA_VISIBLE_DEVICES=0 python pruning_method.py \
+          --base_model llama-3.2-1b \
+          --save_model \
+          --model_path models/llama-3.2-1b/pretrained \
+          --tokenizer_path models/llama-3.2-1b/pretrained/ \
+          --pruning_method taylor \
+          --cal_data ${CD} \
+          --output_dir models/llama-3.2-1b/pretrained/pruned/
+
+     
+     CUDA_VISIBLE_DEVICES=0 python pruning_method.py \
+          --base_model llama-3.2-1b \
+          --save_model \
+          --model_path models/llama-3.2-1b/pretrained \
+          --tokenizer_path models/llama-3.2-1b/pretrained/ \
+          --pruning_method taylor \
+          --cal_data ${CD} --data_cot \
+          --output_dir models/llama-3.2-1b/pretrained/pruned/
+done
 
 ################################################################################
 # CAL_DATA=medmcqa_cot # "bookcorpus medqa medmcqa" # medmcqa_exp"
