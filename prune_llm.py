@@ -203,13 +203,13 @@ def main(args):
         layer_num = [i for i in range(16)]
         remain_num = 12
     else:
-        layer_num = [i for i in range(32)]
+        layer_num = [i for i in range(28)]
         remain_num = 24
 
     if args.pr_method == 'random':
         remained = random_select_and_sort(layer_num, remain_num)
     elif args.pr_method == 'tail':
-        remained = [i for i in range(remain_num)]
+        remained = [i for i in range(28-args.remove_layer)]
     else:
         num = args.remove_layer
         if args.base_model == 'Llama-3.1-8B-Instruct':
@@ -246,7 +246,7 @@ def main(args):
     print(new_model)
 
     if args.save_model:
-        output_lora_dir = '{}/pruned/oneshot/pruned_{}_{}_{}/'.format(args.model_path, args.base_model, args.pr_method, args.remove_layer)
+        output_lora_dir = '{}/pruned/pruned_{}_{}_{}/'.format(args.model_path, args.base_model, args.pr_method, args.remove_layer)
         if not os.path.exists(output_lora_dir):
             os.makedirs(output_lora_dir)
         new_model.save_pretrained(output_lora_dir)

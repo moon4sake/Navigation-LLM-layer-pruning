@@ -35,28 +35,26 @@ set -x
 #      --cal_data medqa \
 #      --output_dir models/vicuna-7b-v1.5/pruned/
 
-CAL_DATA="mmlu gsm8k truthfulqa"
+CAL_DATA="gsm8k mmlu truthfulqa"
 
 for CD in $CAL_DATA
 do
      CUDA_VISIBLE_DEVICES=0 python pruning_method.py \
-          --base_model llama-3.2-1b \
+          --base_model llama-3.2-3b-instruct \
           --save_model \
-          --model_path models/llama-3.2-1b/pretrained \
-          --tokenizer_path models/llama-3.2-1b/pretrained/ \
+          --model_path models/llama-3.2-3b-instruct/pretrained \
+          --tokenizer_path models/llama-3.2-3b-instruct/pretrained/ \
           --pruning_method taylor \
           --cal_data ${CD} \
-          --output_dir models/llama-3.2-1b/pretrained/pruned/
-
-     
-     CUDA_VISIBLE_DEVICES=0 python pruning_method.py \
-          --base_model llama-3.2-1b \
+          --output_dir models/llama-3.2-3b-instruct/pretrained/pruned/ &     
+     CUDA_VISIBLE_DEVICES=1 python pruning_method.py \
+          --base_model llama-3.2-3b-instruct \
           --save_model \
-          --model_path models/llama-3.2-1b/pretrained \
-          --tokenizer_path models/llama-3.2-1b/pretrained/ \
+          --model_path models/llama-3.2-3b-instruct/pretrained \
+          --tokenizer_path models/llama-3.2-3b-instruct/pretrained/ \
           --pruning_method taylor \
           --cal_data ${CD} --data_cot \
-          --output_dir models/llama-3.2-1b/pretrained/pruned/
+          --output_dir models/llama-3.2-3b-instruct/pretrained/pruned/
 done
 
 ################################################################################

@@ -455,7 +455,7 @@ def main(args):
 
         print("Do forward to collect gradient information")
         salience_dict = {}
-        example_prompts = get_examples(args.cal_data, tokenizer, 10, seq_len=128, is_COT=args.data_cot).to(args.device)
+        example_prompts = get_examples(args.cal_data, tokenizer, 10, seq_len=256, is_COT=args.data_cot).to(args.device)
 
         # Force model to have gradient
         for k, param in model.named_parameters():

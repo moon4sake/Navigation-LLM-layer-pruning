@@ -259,7 +259,7 @@ def main(args):
 
     if args.save_model:
         # output_lora_dir = '/public/MountData/yaolu/LLM_pretrained/pruned_model/partial_tuing_taylor8/partial_tuing_{}_alpaca_{}/'.format(args.base_model, args.partial_layer_name)
-        output_lora_dir = '{}/pruned/partial_tuing_taylor8/{}_partial_tuing_{}_{}'.format(args.model_path, args.base_model, args.data, args.partial_layer_name)
+        output_lora_dir = '{}/pruned/partial_tuning_taylor8/{}_partial_tuning_{}_{}'.format(args.model_path, args.base_model, args.data, args.partial_layer_name)
         if not os.path.exists(output_lora_dir):
             os.makedirs(output_lora_dir)
         model.save_pretrained(output_lora_dir)

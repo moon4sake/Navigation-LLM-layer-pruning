@@ -123,25 +123,51 @@ def get_medmcqa_cot(tokenizer, n_samples, seq_len):
         tokenized_samples.append(tokenized_sample.input_ids[:, i:i + seq_len])
     return torch.cat(tokenized_samples, dim=0)
 
+def get_custom_data(dataset, tokenizer, n_samples, seq_len, is_COT=True):
 
-def get_custom_data(dataset, tokenizer, n_samples, seq_len, is_COT=False):
     if dataset == 'mmlu': dataset = "mmul"
-    train_data = load_dataset("datasets/pruning_calibration", split=dataset)
-
-    tokenized_samples, history = [], []
+    train_data = load_dataset('DopeorNope/pruning_calibration', split=dataset)
+    
+    if is_COT:
+        train_data = train_data['COT_answer']
+    else:  
+        train_data = train_data['noCOT_full']
+        
+    tokenized_samples = []
     for _ in range(n_samples):
-        while True:
+        combined_sample = []
+        while len(combined_sample) < seq_len:
             i = random.randint(0, len(train_data) - 1)
-            if is_COT:
-                tokenized_sample = tokenizer(train_data[i]['COT_full'], return_tensors='pt')
-            else:
-                tokenized_sample = tokenizer(train_data[i]['noCOT_full'], return_tensors='pt')
-            if tokenized_sample.input_ids.shape[1] >= seq_len and i not in history:
-                history.append(i)
-                break
-        i = random.randint(0, tokenized_sample.input_ids.shape[1] - seq_len)
-        tokenized_samples.append(tokenized_sample.input_ids[:, i:i + seq_len])
+            tokenized_sample = tokenizer(train_data[i], return_tensors='pt').input_ids[0].tolist()
+            combined_sample.extend(tokenized_sample)
+        
+        # combined_sample의 길이가 seq_len 이상일 때 무작위 시작 위치 선택
+        start_idx = random.randint(0, len(combined_sample) - seq_len)
+        sub_sequence = combined_sample[start_idx:start_idx + seq_len]
+        
+        # 텐서로 변환하고 tokenized_samples에 추가
+        tokenized_samples.append(torch.tensor(sub_sequence).unsqueeze(0))
+    
     return torch.cat(tokenized_samples, dim=0)
+
+# def get_custom_data(dataset, tokenizer, n_samples, seq_len, is_COT=False):
+#     if dataset == 'mmlu': dataset = "mmul"
+#     train_data = load_dataset('DopeorNope/pruning_calibration', split=dataset)
+
+#     tokenized_samples, history = [], []
+#     for _ in range(n_samples):
+#         while True:
+#             i = random.randint(0, len(train_data) - 1)
+#             if is_COT:
+#                 tokenized_sample = tokenizer(train_data[i]['COT_full'], return_tensors='pt')
+#             else:
+#                 tokenized_sample = tokenizer(train_data[i]['noCOT_full'], return_tensors='pt')
+#             if tokenized_sample.input_ids.shape[1] >= seq_len and i not in history:
+#                 history.append(i)
+#                 break
+#         i = random.randint(0, tokenized_sample.input_ids.shape[1] - seq_len)
+#         tokenized_samples.append(tokenized_sample.input_ids[:, i:i + seq_len])
+#     return torch.cat(tokenized_samples, dim=0)
 
 
 def get_examples(dataset, tokenizer, n_samples, seq_len=128, is_COT=False):
